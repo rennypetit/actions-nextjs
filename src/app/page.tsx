@@ -1,3 +1,3 @@
 export default function PageHome() {
-	return <p>hello word {process.env.NEXT_PUBLIC_TEST}</p>;
+	return <p>hello word2</p>;
 }
