@@ -7,7 +7,7 @@ run-name: Probando github actions
 on:
   push:
     branches:
-      - test # Este workflow se ejecutará en cada push a la rama 'test'
+      - main # Este workflow se ejecutará en cada push a la rama 'test'
 
 jobs:
   type-check:
