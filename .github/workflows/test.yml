@@ -1,0 +1,26 @@
+# This is a basic workflow to help you get started with Actions
+
+name: CI
+run-name: Probando github actions
+
+# Controls when the workflow will run
+on:
+  push:
+    branches:
+      - main # Este workflow se ejecutará en cada push a la rama 'test'
+
+jobs:
+  type-check:
+    runs-on: ubuntu-latest # El trabajo se ejecutará en un entorno Ubuntu
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4 # Descarga tu código del repositorio
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20' # Usa Node.js v20, compatible con Next.js 15 y React 19
+
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile # Instala las dependencias usando yarn. --frozen-lockfile asegura que se use el yarn.lock
