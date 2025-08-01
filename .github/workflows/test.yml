@@ -24,3 +24,5 @@ jobs:
 
       - name: Install dependencies
         run: yarn install --frozen-lockfile # Instala las dependencias usando yarn. --frozen-lockfile asegura que se use el yarn.lock
+      - name: Run type check
+        run: yarn type-check
