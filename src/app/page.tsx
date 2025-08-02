@@ -1,3 +1,3 @@
-export default function PageHome({ a }) {
-	return <p>hello word main6</p>;
+export default function PageHome() {
+	return <p>hello word main10</p>;
 }
