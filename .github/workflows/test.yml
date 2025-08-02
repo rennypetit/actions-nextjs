@@ -26,3 +26,29 @@ jobs:
         run: yarn install --frozen-lockfile # Instala las dependencias usando yarn. --frozen-lockfile asegura que se use el yarn.lock
       - name: Run type check
         run: yarn type-check
+
+      #aws
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Get Amplify App ID
+        id: get_app_id
+        run: |
+          # AHORA USA EL SECRETO AMPLIFY_APP_NAME
+          APP_ID=$(aws amplify list-apps --query "apps[?name=='${{ secrets.AMPLIFY_APP_NAME }}'].appId" --output text)
+          echo "AMPLIFY_APP_ID=$APP_ID" >> $GITHUB_ENV
+        env:
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+
+      - name: Trigger Amplify Deployment
+        if: success()
+        run: |
+          BRANCH_NAME=${GITHUB_REF#refs/heads/}
+          echo "Triggering Amplify deployment for branch: $BRANCH_NAME"
+          aws amplify start-job --app-id ${{ env.AMPLIFY_APP_ID }} --branch-name $BRANCH_NAME --job-type RELEASE
+        env:
+          AWS_REGION: ${{ secrets.AWS_REGION }} 
