@@ -39,7 +39,7 @@ jobs:
       - name: Get Amplify App ID
         id: get_app_id
         run: |
-          set -x # Habilitar depuración de comandos shell
+          set -eux # Habilitar depuración, salir en error, tratar variables no seteadas como error
           APP_ID=$(aws amplify list-apps --query "apps[?name=='${{ secrets.AMPLIFY_APP_NAME }}'].appId" --output text)
           echo "AMPLIFY_APP_ID=$APP_ID" >> $GITHUB_ENV
           echo "DEBUG: AMPLIFY_APP_ID set to: $APP_ID"
@@ -53,15 +53,27 @@ jobs:
       - name: Trigger Amplify Deployment
         id: trigger_deploy # ID para referenciar los outputs de este paso
         run: |
-          set -x # Habilitar depuración de comandos shell
+          set -eux # Habilitar depuración, salir en error, tratar variables no seteadas como error
           BRANCH_NAME=${GITHUB_REF#refs/heads/}
           echo "Triggering Amplify deployment for branch: $BRANCH_NAME"
-          
-          # Ejecuta el comando y captura el JOB_ID
-          JOB_ID=$(aws amplify start-job --app-id ${{ env.AMPLIFY_APP_ID }} --branch-name $BRANCH_NAME --job-type RELEASE --query "job.jobId" --output text)
-          
-          echo "DEBUG: Raw JOB_ID captured from AWS CLI: '$JOB_ID'" # Muestra el valor capturado
-          
+
+          # Captura la salida JSON completa primero
+          RAW_AMPLIFY_OUTPUT=$(aws amplify start-job --app-id ${{ env.AMPLIFY_APP_ID }} --branch-name $BRANCH_NAME --job-type RELEASE --output json)
+
+          echo "DEBUG: Raw output from aws amplify start-job:"
+          echo "$RAW_AMPLIFY_OUTPUT" # Imprime la salida JSON completa para depuración
+
+          # Extrae el jobId usando jq
+          JOB_ID=$(echo "$RAW_AMPLIFY_OUTPUT" | jq -r '.job.jobId')
+
+          echo "DEBUG: Extracted JOB_ID using jq: '$JOB_ID'" # Muestra el valor extraído
+
+          # Valida que JOB_ID no esté vacío o sea "null"
+          if [ -z "$JOB_ID" ] || [ "$JOB_ID" == "null" ]; then
+            echo "Error: Failed to get a valid Amplify Job ID. Raw output might be malformed or empty."
+            exit 1 # Falla el job si no se obtiene un JOB_ID válido
+          fi
+
           echo "Amplify Job ID: $JOB_ID"
           echo "job_id=$JOB_ID" >> "$GITHUB_OUTPUT" # Guarda el JOB_ID como output del paso
           echo "DEBUG: Content of GITHUB_OUTPUT after writing: $(cat "$GITHUB_OUTPUT")" # Verifica lo que se escribió
@@ -82,7 +94,7 @@ jobs:
       - name: Get Amplify App ID for Polling
         id: get_app_id_poll
         run: |
-          set -x # Habilitar depuración de comandos shell
+          set -eux # Habilitar depuración, salir en error, tratar variables no seteadas como error
           APP_ID=$(aws amplify list-apps --query "apps[?name=='${{ secrets.AMPLIFY_APP_NAME }}'].appId" --output text)
           echo "AMPLIFY_APP_ID=$APP_ID" >> $GITHUB_ENV
           echo "DEBUG: AMPLIFY_APP_ID set to: $APP_ID"
@@ -94,13 +106,13 @@ jobs:
 
       - name: Poll Amplify Deployment Status
         run: |
-          set -x # Habilitar depuración de comandos shell
+          set -eux # Habilitar depuración, salir en error, tratar variables no seteadas como error
           APP_ID="${{ env.AMPLIFY_APP_ID }}"
           BRANCH_NAME="${GITHUB_REF#refs/heads/}"
           JOB_ID="${{ needs.deploy-to-amplify.outputs.amplify_job_id }}" # Accede al output del job anterior
-          
+
           echo "DEBUG: JOB_ID received in polling job: '$JOB_ID'" # Muestra el JOB_ID recibido
-          
+
           echo "Polling Amplify deployment for App ID: $APP_ID, Branch: $BRANCH_NAME, Job ID: $JOB_ID"
 
           MAX_ATTEMPTS=60 # Máximo 10 minutos (60 * 10 segundos de espera)
@@ -112,8 +124,8 @@ jobs:
             echo "Intento $ATTEMPT: Comprobando estado..."
             
             # Asegúrate de que JOB_ID no esté vacío antes de llamar a get-job
-            if [ -z "$JOB_ID" ]; then
-              echo "Error: El ID del trabajo de Amplify no se pudo obtener del job anterior. Abortando polling."
+            if [ -z "$JOB_ID" ] || [ "$JOB_ID" == "null" ]; then
+              echo "Error: El ID del trabajo de Amplify no se pudo obtener del job anterior o es inválido. Abortando polling."
               exit 1
             fi
 
