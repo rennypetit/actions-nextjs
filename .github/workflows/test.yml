@@ -54,7 +54,7 @@ jobs:
           aws amplify start-job --app-id ${{ env.AMPLIFY_APP_ID }} --branch-name $BRANCH_NAME --job-type RELEASE
         env:
           AWS_REGION: ${{ secrets.AWS_REGION }}
-poll-amplify-deployment:
+  poll-amplify-deployment:
     runs-on: ubuntu-latest
     needs: deploy-to-amplify # Este job se ejecuta después de que deploy-to-amplify haya terminado
     steps:
