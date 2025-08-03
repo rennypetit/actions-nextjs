@@ -63,8 +63,8 @@ jobs:
           echo "DEBUG: Raw output from aws amplify start-job:"
           echo "$RAW_AMPLIFY_OUTPUT" # Imprime la salida JSON completa para depuración
 
-          # Extrae el jobId usando jq
-          JOB_ID=$(echo "$RAW_AMPLIFY_OUTPUT" | jq -r '.job.jobId')
+          # Extrae el jobId usando jq con el path CORRECTO
+          JOB_ID=$(echo "$RAW_AMPLIFY_OUTPUT" | jq -r '.jobSummary.jobId') # <--- CAMBIO AQUÍ
 
           echo "DEBUG: Extracted JOB_ID using jq: '$JOB_ID'" # Muestra el valor extraído
 
