@@ -3,8 +3,10 @@ name: CI - Type Check and Deploy
 on:
   push:
     branches:
-      - main
-      - test
+      - '**' # <--- Esto significa CUALQUIER RAMA
+    #branches:
+      #- main
+      #- test
 
 jobs:
   # Job 1: Verificación de tipado
@@ -50,5 +52,67 @@ jobs:
           BRANCH_NAME=${GITHUB_REF#refs/heads/}
           echo "Triggering Amplify deployment for branch: $BRANCH_NAME"
           aws amplify start-job --app-id ${{ env.AMPLIFY_APP_ID }} --branch-name $BRANCH_NAME --job-type RELEASE
+        env:
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+poll-amplify-deployment:
+    runs-on: ubuntu-latest
+    needs: deploy-to-amplify # Este job se ejecuta después de que deploy-to-amplify haya terminado
+    steps:
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Get Amplify App ID for Polling
+        id: get_app_id_poll
+        run: |
+          APP_ID=$(aws amplify list-apps --query "apps[?name=='${{ secrets.AMPLIFY_APP_NAME }}'].appId" --output text)
+          echo "AMPLIFY_APP_ID=$APP_ID" >> $GITHUB_ENV
+        env:
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+
+      - name: Install jq (for JSON parsing)
+        run: sudo apt-get update && sudo apt-get install -y jq
+
+      - name: Poll Amplify Deployment Status
+        run: |
+          APP_ID="${{ env.AMPLIFY_APP_ID }}"
+          BRANCH_NAME="${GITHUB_REF#refs/heads/}"
+          JOB_ID="${{ needs.deploy-to-amplify.outputs.amplify_job_id }}" # Accede al output del job anterior
+          
+          echo "Polling Amplify deployment for App ID: $APP_ID, Branch: $BRANCH_NAME, Job ID: $JOB_ID"
+
+          MAX_ATTEMPTS=60 # Máximo 10 minutos (60 * 10 segundos de espera)
+          ATTEMPT=0
+          STATUS=""
+
+          while [ "$STATUS" != "SUCCEEDED" ] && [ "$STATUS" != "FAILED" ] && [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
+            ATTEMPT=$((ATTEMPT+1))
+            echo "Intento $ATTEMPT: Comprobando estado..."
+            
+            JOB_DETAILS=$(aws amplify get-job --app-id "$APP_ID" --branch-name "$BRANCH_NAME" --job-id "$JOB_ID" --query "job" --output json)
+            STATUS=$(echo "$JOB_DETAILS" | jq -r '.status')
+            
+            echo "Estado actual: $STATUS"
+
+            if [ "$STATUS" == "FAILED" ]; then
+              echo "¡El despliegue de Amplify FALLÓ!"
+              exit 1 # Falla el job de GitHub Actions
+            fi
+
+            if [ "$STATUS" == "SUCCEEDED" ]; then
+              echo "¡El despliegue de Amplify FUE EXITOSO!"
+              break
+            fi
+
+            sleep 10 # Espera 10 segundos antes de la siguiente comprobación
+          done
+
+          if [ "$STATUS" != "SUCCEEDED" ]; then
+            echo "El despliegue de Amplify no finalizó con éxito dentro del tiempo máximo."
+            exit 1 # Falla el job de GitHub Actions si se agotó el tiempo
+          fi
         env:
           AWS_REGION: ${{ secrets.AWS_REGION }}
