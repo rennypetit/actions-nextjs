@@ -8,6 +8,11 @@ on:
   pull_request:
     branches:
       - main
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true # Cancels previous runs in the same group
+
 jobs:
   type-check:
     runs-on: ubuntu-latest
