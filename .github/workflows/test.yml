@@ -4,7 +4,7 @@ run-name: TypeScript Type Check and Deploy to Amplify
 on:
   push:
     branches:
-      - develop
+      - main
 jobs:
   type-check:
     runs-on: ubuntu-latest
