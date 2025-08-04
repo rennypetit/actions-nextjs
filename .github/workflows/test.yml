@@ -1,10 +1,13 @@
 name: CI - Type Check and Deploy
+run-name: TypeScript Type Check and Deploy to Amplify
 
 on:
   push:
     branches:
-      - '**' # Esto significa CUALQUIER RAMA
-
+      - test
+  pull_request:
+    branches:
+      - main
 jobs:
   type-check:
     runs-on: ubuntu-latest
@@ -25,9 +28,9 @@ jobs:
 
   deploy-to-amplify:
     runs-on: ubuntu-latest
-    needs: type-check # Este job solo se ejecuta si type-check es exitoso
+    needs: type-check # This job only runs if type-check is successful
     outputs:
-      amplify_job_id: ${{ steps.trigger_deploy.outputs.job_id }} # Exporta el ID del trabajo de Amplify
+      amplify_job_id: ${{ steps.trigger_deploy.outputs.job_id }} # Export the Amplify job ID
     steps:
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -39,7 +42,7 @@ jobs:
       - name: Get Amplify App ID
         id: get_app_id
         run: |
-          set -eux # Habilitar depuración, salir en error, tratar variables no seteadas como error
+          set -eux # Enable debugging, exit on error, treat unset variables as errors
           APP_ID=$(aws amplify list-apps --query "apps[?name=='${{ secrets.AMPLIFY_APP_NAME }}'].appId" --output text)
           echo "AMPLIFY_APP_ID=$APP_ID" >> $GITHUB_ENV
           echo "DEBUG: AMPLIFY_APP_ID set to: $APP_ID"
@@ -47,112 +50,35 @@ jobs:
           AWS_REGION: ${{ secrets.AWS_REGION }}
 
       - name: Wait before triggering deployment
-        run: sleep 15 # Espera 15 segundos para evitar LimitExceededException
+        run: sleep 15 # Wait 15 seconds to avoid LimitExceededException
         shell: bash
 
       - name: Trigger Amplify Deployment
-        id: trigger_deploy # ID para referenciar los outputs de este paso
+        id: trigger_deploy # ID to reference the outputs of this step
         run: |
-          set -eux # Habilitar depuración, salir en error, tratar variables no seteadas como error
+          set -eux # Enable debugging, exit on error, treat unset variables as errors
           BRANCH_NAME=${GITHUB_REF#refs/heads/}
           echo "Triggering Amplify deployment for branch: $BRANCH_NAME"
 
-          # Captura la salida JSON completa primero
+          # Capture the full JSON output first
           RAW_AMPLIFY_OUTPUT=$(aws amplify start-job --app-id ${{ env.AMPLIFY_APP_ID }} --branch-name $BRANCH_NAME --job-type RELEASE --output json)
 
           echo "DEBUG: Raw output from aws amplify start-job:"
-          echo "$RAW_AMPLIFY_OUTPUT" # Imprime la salida JSON completa para depuración
+          echo "$RAW_AMPLIFY_OUTPUT" # Print the full JSON output for debugging
 
-          # Extrae el jobId usando jq con el path CORRECTO
-          JOB_ID=$(echo "$RAW_AMPLIFY_OUTPUT" | jq -r '.jobSummary.jobId') # <--- CAMBIO AQUÍ
+          # Extract the jobId using jq with the CORRECT path
+          JOB_ID=$(echo "$RAW_AMPLIFY_OUTPUT" | jq -r '.jobSummary.jobId')
 
-          echo "DEBUG: Extracted JOB_ID using jq: '$JOB_ID'" # Muestra el valor extraído
+          echo "DEBUG: Extracted JOB_ID using jq: '$JOB_ID'" # Display the extracted value
 
-          # Valida que JOB_ID no esté vacío o sea "null"
+          # Validate that JOB_ID is not empty or "null"
           if [ -z "$JOB_ID" ] || [ "$JOB_ID" == "null" ]; then
             echo "Error: Failed to get a valid Amplify Job ID. Raw output might be malformed or empty."
-            exit 1 # Falla el job si no se obtiene un JOB_ID válido
+            exit 1 # Fail the job if a valid JOB_ID is not obtained
           fi
 
           echo "Amplify Job ID: $JOB_ID"
-          echo "job_id=$JOB_ID" >> "$GITHUB_OUTPUT" # Guarda el JOB_ID como output del paso
-          echo "DEBUG: Content of GITHUB_OUTPUT after writing: $(cat "$GITHUB_OUTPUT")" # Verifica lo que se escribió
-        env:
-          AWS_REGION: ${{ secrets.AWS_REGION }}
-
-  poll-amplify-deployment:
-    runs-on: ubuntu-latest
-    needs: deploy-to-amplify # Este job se ejecuta después de que deploy-to-amplify haya terminado
-    steps:
-      - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION }}
-
-      - name: Get Amplify App ID for Polling
-        id: get_app_id_poll
-        run: |
-          set -eux # Habilitar depuración, salir en error, tratar variables no seteadas como error
-          APP_ID=$(aws amplify list-apps --query "apps[?name=='${{ secrets.AMPLIFY_APP_NAME }}'].appId" --output text)
-          echo "AMPLIFY_APP_ID=$APP_ID" >> $GITHUB_ENV
-          echo "DEBUG: AMPLIFY_APP_ID set to: $APP_ID"
-        env:
-          AWS_REGION: ${{ secrets.AWS_REGION }}
-
-      - name: Install jq (for JSON parsing)
-        run: sudo apt-get update && sudo apt-get install -y jq
-
-      - name: Poll Amplify Deployment Status
-        run: |
-          set -eux # Habilitar depuración, salir en error, tratar variables no seteadas como error
-          APP_ID="${{ env.AMPLIFY_APP_ID }}"
-          BRANCH_NAME="${GITHUB_REF#refs/heads/}"
-          JOB_ID="${{ needs.deploy-to-amplify.outputs.amplify_job_id }}" # Accede al output del job anterior
-
-          echo "DEBUG: JOB_ID received in polling job: '$JOB_ID'" # Muestra el JOB_ID recibido
-
-          echo "Polling Amplify deployment for App ID: $APP_ID, Branch: $BRANCH_NAME, Job ID: $JOB_ID"
-
-          MAX_ATTEMPTS=60 # Máximo 10 minutos (60 * 10 segundos de espera)
-          ATTEMPT=0
-          STATUS=""
-
-          while [ "$STATUS" != "SUCCEEDED" ] && [ "$STATUS" != "FAILED" ] && [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
-            ATTEMPT=$((ATTEMPT+1))
-            echo "Intento $ATTEMPT: Comprobando estado..."
-            
-            # Asegúrate de que JOB_ID no esté vacío antes de llamar a get-job
-            if [ -z "$JOB_ID" ] || [ "$JOB_ID" == "null" ]; then
-              echo "Error: El ID del trabajo de Amplify no se pudo obtener del job anterior o es inválido. Abortando polling."
-              exit 1
-            fi
-
-            JOB_DETAILS=$(aws amplify get-job --app-id "$APP_ID" --branch-name "$BRANCH_NAME" --job-id "$JOB_ID" --query "job" --output json)
-            
-            echo "DEBUG: JOB_DETAILS raw output: '$JOB_DETAILS'" # Muestra la salida cruda de get-job
-
-            STATUS=$(echo "$JOB_DETAILS" | jq -r '.status')
-            
-            echo "Estado actual: $STATUS"
-
-            if [ "$STATUS" == "FAILED" ]; then
-              echo "¡El despliegue de Amplify FALLÓ!"
-              exit 1 # Falla el job de GitHub Actions
-            fi
-
-            if [ "$STATUS" == "SUCCEEDED" ]; then
-              echo "¡El despliegue de Amplify FUE EXITOSO!"
-              break
-            fi
-
-            sleep 10 # Espera 10 segundos antes de la siguiente comprobación
-          done
-
-          if [ "$STATUS" != "SUCCEEDED" ]; then
-            echo "El despliegue de Amplify no finalizó con éxito dentro del tiempo máximo."
-            exit 1 # Falla el job de GitHub Actions si se agotó el tiempo
-          fi
+          echo "job_id=$JOB_ID" >> "$GITHUB_OUTPUT" # Save the JOB_ID as output of the step
+          echo "DEBUG: Content of GITHUB_OUTPUT after writing: $(cat "$GITHUB_OUTPUT")" # Check what was written
         env:
           AWS_REGION: ${{ secrets.AWS_REGION }}
