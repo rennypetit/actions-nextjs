@@ -11,7 +11,7 @@ on:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true # Cancels previous runs in the same group
+  cancel-in-progress: true # Cancel previous runs in the same group
 
 jobs:
   type-check:
@@ -55,18 +55,28 @@ jobs:
           AWS_REGION: ${{ secrets.AWS_REGION }}
 
       - name: Wait before triggering deployment
-        run: sleep 15 # Wait 15 seconds to avoid LimitExceededException
+        run: sleep 15 # Wait 15 seconds to avoid LimitExceededExceptions
         shell: bash
 
       - name: Trigger Amplify Deployment
         id: trigger_deploy # ID to reference the outputs of this step
         run: |
           set -eux # Enable debugging, exit on error, treat unset variables as errors
-          BRANCH_NAME=${GITHUB_REF#refs/heads/}
-          echo "Triggering Amplify deployment for branch: $BRANCH_NAME"
+
+          # Determinar el nombre de la rama para Amplify
+          # Si es un Pull Request, usa github.head_ref (la rama de origen del PR)
+          # Si es un push, usa github.ref_name (el nombre de la rama de push)
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            AMPLIFY_BRANCH_NAME="${{ github.head_ref }}"
+          else
+            AMPLIFY_BRANCH_NAME="${{ github.ref_name }}"
+          fi
+
+          echo "DEBUG: Determined Amplify Branch Name: '$AMPLIFY_BRANCH_NAME'"
+          echo "Triggering Amplify deployment for branch: $AMPLIFY_BRANCH_NAME"
 
           # Capture the full JSON output first
-          RAW_AMPLIFY_OUTPUT=$(aws amplify start-job --app-id ${{ env.AMPLIFY_APP_ID }} --branch-name $BRANCH_NAME --job-type RELEASE --output json)
+          RAW_AMPLIFY_OUTPUT=$(aws amplify start-job --app-id ${{ env.AMPLIFY_APP_ID }} --branch-name "$AMPLIFY_BRANCH_NAME" --job-type RELEASE --output json) # <--- CAMBIO AQUÍ
 
           echo "DEBUG: Raw output from aws amplify start-job:"
           echo "$RAW_AMPLIFY_OUTPUT" # Print the full JSON output for debugging
