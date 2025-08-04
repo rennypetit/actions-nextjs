@@ -11,7 +11,7 @@ on:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true # Cancel previous runs in the same group
+  cancel-in-progress: true
 
 jobs:
   type-check:
@@ -33,9 +33,9 @@ jobs:
 
   deploy-to-amplify:
     runs-on: ubuntu-latest
-    needs: type-check # This job only runs if type-check is successful
+    needs: type-check
     outputs:
-      amplify_job_id: ${{ steps.trigger_deploy.outputs.job_id }} # Export the Amplify job ID
+      amplify_job_id: ${{ steps.trigger_deploy.outputs.job_id }}
     steps:
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -47,7 +47,7 @@ jobs:
       - name: Get Amplify App ID
         id: get_app_id
         run: |
-          set -eux # Enable debugging, exit on error, treat unset variables as errors
+          set -eux
           APP_ID=$(aws amplify list-apps --query "apps[?name=='${{ secrets.AMPLIFY_APP_NAME }}'].appId" --output text)
           echo "AMPLIFY_APP_ID=$APP_ID" >> $GITHUB_ENV
           echo "DEBUG: AMPLIFY_APP_ID set to: $APP_ID"
@@ -55,19 +55,17 @@ jobs:
           AWS_REGION: ${{ secrets.AWS_REGION }}
 
       - name: Wait before triggering deployment
-        run: sleep 15 # Wait 15 seconds to avoid LimitExceededExceptions
+        run: sleep 15
         shell: bash
 
       - name: Trigger Amplify Deployment
-        id: trigger_deploy # ID to reference the outputs of this step
+        id: trigger_deploy
         run: |
-          set -eux # Enable debugging, exit on error, treat unset variables as errors
+          set -eux
 
-          # Determinar el nombre de la rama para Amplify
-          # Si es un Pull Request, usa github.base_ref (la rama de destino del PR, ej. 'main')
-          # Si es un push, usa github.ref_name (el nombre de la rama de push, ej. 'test')
+          # Si es push, usa la rama del push. Si es PR, usa main
           if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-            AMPLIFY_BRANCH_NAME="${{ github.base_ref }}" # CAMBIO: de head_ref a base_ref
+            AMPLIFY_BRANCH_NAME="main"
           else
             AMPLIFY_BRANCH_NAME="${{ github.ref_name }}"
           fi
@@ -75,25 +73,22 @@ jobs:
           echo "DEBUG: Determined Amplify Branch Name: '$AMPLIFY_BRANCH_NAME'"
           echo "Triggering Amplify deployment for branch: $AMPLIFY_BRANCH_NAME"
 
-          # Capture the full JSON output first
           RAW_AMPLIFY_OUTPUT=$(aws amplify start-job --app-id ${{ env.AMPLIFY_APP_ID }} --branch-name "$AMPLIFY_BRANCH_NAME" --job-type RELEASE --output json)
 
           echo "DEBUG: Raw output from aws amplify start-job:"
-          echo "$RAW_AMPLIFY_OUTPUT" # Print the full JSON output for debugging
+          echo "$RAW_AMPLIFY_OUTPUT"
 
-          # Extract the jobId using jq with the CORRECT path
           JOB_ID=$(echo "$RAW_AMPLIFY_OUTPUT" | jq -r '.jobSummary.jobId')
 
-          echo "DEBUG: Extracted JOB_ID using jq: '$JOB_ID'" # Display the extracted value
+          echo "DEBUG: Extracted JOB_ID using jq: '$JOB_ID'"
 
-          # Validate that JOB_ID is not empty or "null"
           if [ -z "$JOB_ID" ] || [ "$JOB_ID" == "null" ]; then
             echo "Error: Failed to get a valid Amplify Job ID. Raw output might be malformed or empty."
-            exit 1 # Fail the job if a valid JOB_ID is not obtained
+            exit 1
           fi
 
           echo "Amplify Job ID: $JOB_ID"
-          echo "job_id=$JOB_ID" >> "$GITHUB_OUTPUT" # Save the JOB_ID as output of the step
-          echo "DEBUG: Content of GITHUB_OUTPUT after writing: $(cat "$GITHUB_OUTPUT")" # Check what was written
+          echo "job_id=$JOB_ID" >> "$GITHUB_OUTPUT"
+          echo "DEBUG: Content of GITHUB_OUTPUT after writing: $(cat "$GITHUB_OUTPUT")"
         env:
           AWS_REGION: ${{ secrets.AWS_REGION }}
