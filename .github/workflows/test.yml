@@ -64,10 +64,10 @@ jobs:
           set -eux # Enable debugging, exit on error, treat unset variables as errors
 
           # Determinar el nombre de la rama para Amplify
-          # Si es un Pull Request, usa github.head_ref (la rama de origen del PR)
-          # Si es un push, usa github.ref_name (el nombre de la rama de push)
+          # Si es un Pull Request, usa github.base_ref (la rama de destino del PR, ej. 'main')
+          # Si es un push, usa github.ref_name (el nombre de la rama de push, ej. 'test')
           if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-            AMPLIFY_BRANCH_NAME="${{ github.head_ref }}"
+            AMPLIFY_BRANCH_NAME="${{ github.base_ref }}" # CAMBIO: de head_ref a base_ref
           else
             AMPLIFY_BRANCH_NAME="${{ github.ref_name }}"
           fi
@@ -76,7 +76,7 @@ jobs:
           echo "Triggering Amplify deployment for branch: $AMPLIFY_BRANCH_NAME"
 
           # Capture the full JSON output first
-          RAW_AMPLIFY_OUTPUT=$(aws amplify start-job --app-id ${{ env.AMPLIFY_APP_ID }} --branch-name "$AMPLIFY_BRANCH_NAME" --job-type RELEASE --output json) # <--- CAMBIO AQUÍ
+          RAW_AMPLIFY_OUTPUT=$(aws amplify start-job --app-id ${{ env.AMPLIFY_APP_ID }} --branch-name "$AMPLIFY_BRANCH_NAME" --job-type RELEASE --output json)
 
           echo "DEBUG: Raw output from aws amplify start-job:"
           echo "$RAW_AMPLIFY_OUTPUT" # Print the full JSON output for debugging
