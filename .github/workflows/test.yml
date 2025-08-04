@@ -1,13 +1,11 @@
 name: CI - Type Check and Deploy
+run-name: TypeScript Type Check and Deploy to Amplify
 
 on:
   push:
     branches:
-      - main
-      - test
-
+      - develop
 jobs:
-  # Job 1: Verificación de tipado
   type-check:
     runs-on: ubuntu-latest
     steps:
@@ -25,10 +23,11 @@ jobs:
       - name: Run type check
         run: yarn type-check
 
-  # Job 2: Despliegue en Amplify (depende del éxito del type-check)
   deploy-to-amplify:
     runs-on: ubuntu-latest
-    needs: type-check
+    needs: type-check # This job only runs if type-check is successful
+    outputs:
+      amplify_job_id: ${{ steps.trigger_deploy.outputs.job_id }} # Export the Amplify job ID
     steps:
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -40,15 +39,43 @@ jobs:
       - name: Get Amplify App ID
         id: get_app_id
         run: |
+          set -eux # Enable debugging, exit on error, treat unset variables as errors
           APP_ID=$(aws amplify list-apps --query "apps[?name=='${{ secrets.AMPLIFY_APP_NAME }}'].appId" --output text)
           echo "AMPLIFY_APP_ID=$APP_ID" >> $GITHUB_ENV
+          echo "DEBUG: AMPLIFY_APP_ID set to: $APP_ID"
         env:
           AWS_REGION: ${{ secrets.AWS_REGION }}
 
+      - name: Wait before triggering deployment
+        run: sleep 15 # Wait 15 seconds to avoid LimitExceededException
+        shell: bash
+
       - name: Trigger Amplify Deployment
+        id: trigger_deploy # ID to reference the outputs of this step
         run: |
+          set -eux # Enable debugging, exit on error, treat unset variables as errors
           BRANCH_NAME=${GITHUB_REF#refs/heads/}
           echo "Triggering Amplify deployment for branch: $BRANCH_NAME"
-          aws amplify start-job --app-id ${{ env.AMPLIFY_APP_ID }} --branch-name $BRANCH_NAME --job-type RELEASE
+
+          # Capture the full JSON output first
+          RAW_AMPLIFY_OUTPUT=$(aws amplify start-job --app-id ${{ env.AMPLIFY_APP_ID }} --branch-name $BRANCH_NAME --job-type RELEASE --output json)
+
+          echo "DEBUG: Raw output from aws amplify start-job:"
+          echo "$RAW_AMPLIFY_OUTPUT" # Print the full JSON output for debugging
+
+          # Extract the jobId using jq with the CORRECT path
+          JOB_ID=$(echo "$RAW_AMPLIFY_OUTPUT" | jq -r '.jobSummary.jobId')
+
+          echo "DEBUG: Extracted JOB_ID using jq: '$JOB_ID'" # Display the extracted value
+
+          # Validate that JOB_ID is not empty or "null"
+          if [ -z "$JOB_ID" ] || [ "$JOB_ID" == "null" ]; then
+            echo "Error: Failed to get a valid Amplify Job ID. Raw output might be malformed or empty."
+            exit 1 # Fail the job if a valid JOB_ID is not obtained
+          fi
+
+          echo "Amplify Job ID: $JOB_ID"
+          echo "job_id=$JOB_ID" >> "$GITHUB_OUTPUT" # Save the JOB_ID as output of the step
+          echo "DEBUG: Content of GITHUB_OUTPUT after writing: $(cat "$GITHUB_OUTPUT")" # Check what was written
         env:
           AWS_REGION: ${{ secrets.AWS_REGION }}
