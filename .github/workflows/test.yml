@@ -1,37 +1,53 @@
+# The overall name of the workflow, as it appears in the "Actions" tab.
 name: CI - Type Check and Deploy
-# ESTA LÍNEA ES LA QUE CAMBIA EL TÍTULO
+
+# The dynamic title for each specific run of the workflow.
+# It changes based on the event that triggered it.
 run-name: Deploy to ${{ github.event_name == 'pull_request' && github.base_ref || github.ref_name }} by @${{ github.actor }}
 
+# This section defines what triggers the workflow.
 on:
+  # Trigger on any push to the 'test' branch.
   push:
     branches:
       - test
+  # Trigger when a pull request is opened or updated that targets the 'main' branch.
   pull_request:
     branches:
       - main
 
+# Prevents multiple runs for the same branch from running at the same time.
+# It will cancel the older run and start the new one.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# Jobs are the series of steps that execute.
 jobs:
+  # First job: runs a TypeScript type check.
   type-check:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
+
       - name: Install dependencies
         run: yarn install --frozen-lockfile
+
       - name: Run type check
         run: yarn type-check
 
+  # Second job: deploys the application to AWS Amplify.
   deploy-to-amplify:
-    runs-on: ubuntu-latest
+    # This job will only start after the 'type-check' job succeeds.
     needs: type-check
+    runs-on: ubuntu-latest
+    # This condition ensures the job only runs for pushes to 'test' or PRs to 'main'.
     if: github.event_name == 'push' || github.base_ref == 'main'
     steps:
       - name: Configure AWS Credentials
@@ -48,25 +64,28 @@ jobs:
         env:
           AWS_REGION: ${{ secrets.AWS_REGION }}
 
-      - name: 🔥 TRIGGER DEPLOYMENT 🔥
+      - name: Trigger Amplify Deployment
         run: |
-          set -e
+          set -e # Exit immediately if a command exits with a non-zero status.
 
+          # === CORE LOGIC: DECIDE WHICH BRANCH TO DEPLOY ===
+          # Check if the event that triggered the workflow was a 'pull_request'.
           if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            # If it's a pull request, we deploy the 'main' branch.
             AMPLIFY_BRANCH_NAME="main"
           else
+            # If it's not a pull request, it must be a push to 'test', so we deploy 'test'.
             AMPLIFY_BRANCH_NAME="test"
           fi
 
-          echo "**************************************************"
-          echo "ORDEN DE DESPLIEGUE PARA AMPLIFY: ---> $AMPLIFY_BRANCH_NAME <---"
-          echo "**************************************************"
+          echo "Deployment target determined: $AMPLIFY_BRANCH_NAME"
 
+          # Start the release job on AWS Amplify for the determined branch.
           aws amplify start-job \
             --app-id ${{ env.AMPLIFY_APP_ID }} \
             --branch-name "$AMPLIFY_BRANCH_NAME" \
             --job-type RELEASE
 
-          echo "✅ ¡Orden enviada a Amplify para desplegar la rama '$AMPLIFY_BRANCH_NAME'!"
+          echo "✅ Deployment command sent to Amplify for branch '$AMPLIFY_BRANCH_NAME'."
         env:
           AWS_REGION: ${{ secrets.AWS_REGION }}
