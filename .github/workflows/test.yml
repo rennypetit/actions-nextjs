@@ -1,5 +1,6 @@
 name: CI - Type Check and Deploy
-run-name: TypeScript Type Check and Deploy to Amplify
+# ESTA LÍNEA ES LA QUE CAMBIA EL TÍTULO
+run-name: Deploy to ${{ github.event_name == 'pull_request' && github.base_ref || github.ref_name }} by @${{ github.actor }}
 
 on:
   push:
@@ -47,7 +48,7 @@ jobs:
         env:
           AWS_REGION: ${{ secrets.AWS_REGION }}
 
-      - name: 🔥 TRIGGER DEPLOYMENT - MIRA ESTE PASO 🔥
+      - name: 🔥 TRIGGER DEPLOYMENT 🔥
         run: |
           set -e
 
@@ -58,10 +59,6 @@ jobs:
           fi
 
           echo "**************************************************"
-          echo "EVENTO DETECTADO: ${{ github.event_name }}"
-          echo "RAMA DE ORIGEN (head_ref): ${{ github.head_ref }}"
-          echo "RAMA DE DESTINO (base_ref): ${{ github.base_ref }}"
-          echo "--------------------------------------------------"
           echo "ORDEN DE DESPLIEGUE PARA AMPLIFY: ---> $AMPLIFY_BRANCH_NAME <---"
           echo "**************************************************"
 
