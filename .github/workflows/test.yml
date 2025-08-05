@@ -19,21 +19,19 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-
       - name: Install dependencies
         run: yarn install --frozen-lockfile
-
       - name: Run type check
         run: yarn type-check
 
   deploy-to-amplify:
     runs-on: ubuntu-latest
     needs: type-check
+    if: github.event_name == 'push' || github.base_ref == 'main'
     steps:
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -46,35 +44,32 @@ jobs:
         run: |
           APP_ID=$(aws amplify list-apps --query "apps[?name=='${{ secrets.AMPLIFY_APP_NAME }}'].appId" --output text)
           echo "AMPLIFY_APP_ID=$APP_ID" >> $GITHUB_ENV
+        env:
+          AWS_REGION: ${{ secrets.AWS_REGION }}
 
-      - name: Wait before triggering deployment
-        run: sleep 15
-
-      - name: Trigger Amplify Deployment
+      - name: 🔥 TRIGGER DEPLOYMENT - MIRA ESTE PASO 🔥
         run: |
-          # LÓGICA SIMPLE Y CLARA:
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            # Si es PR hacia main, despliega en main
-            BRANCH_TO_DEPLOY="main"
-            echo "🔥 PULL REQUEST DETECTED - DEPLOYING TO MAIN"
+          set -e
+
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            AMPLIFY_BRANCH_NAME="main"
           else
-            # Si es push a test, despliega en test  
-            BRANCH_TO_DEPLOY="test"
-            echo "🚀 PUSH TO TEST DETECTED - DEPLOYING TO TEST"
+            AMPLIFY_BRANCH_NAME="test"
           fi
 
-          echo "=== DEPLOYMENT INFO ==="
-          echo "Event: ${{ github.event_name }}"
-          echo "Current branch (ref_name): ${{ github.ref_name }}"
-          echo "PR base branch: ${{ github.base_ref }}"
-          echo "Branch to deploy: $BRANCH_TO_DEPLOY"
-          echo "======================="
-
-          echo "Triggering Amplify deployment for branch: $BRANCH_TO_DEPLOY"
+          echo "**************************************************"
+          echo "EVENTO DETECTADO: ${{ github.event_name }}"
+          echo "RAMA DE ORIGEN (head_ref): ${{ github.head_ref }}"
+          echo "RAMA DE DESTINO (base_ref): ${{ github.base_ref }}"
+          echo "--------------------------------------------------"
+          echo "ORDEN DE DESPLIEGUE PARA AMPLIFY: ---> $AMPLIFY_BRANCH_NAME <---"
+          echo "**************************************************"
 
           aws amplify start-job \
             --app-id ${{ env.AMPLIFY_APP_ID }} \
-            --branch-name "$BRANCH_TO_DEPLOY" \
+            --branch-name "$AMPLIFY_BRANCH_NAME" \
             --job-type RELEASE
+
+          echo "✅ ¡Orden enviada a Amplify para desplegar la rama '$AMPLIFY_BRANCH_NAME'!"
         env:
           AWS_REGION: ${{ secrets.AWS_REGION }}
