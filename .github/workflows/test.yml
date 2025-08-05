@@ -3,7 +3,7 @@ name: CI - Type Check and Deploy
 
 # The dynamic title for each specific run of the workflow.
 # It changes based on the event that triggered it.
-run-name: Deploy to ${{ github.event_name == 'pull_request' && github.base_ref || github.ref_name }} by @${{ github.actor }}
+run-name: Type Check and Deploy to ${{ github.event_name == 'pull_request' && github.base_ref || github.ref_name }} by @${{ github.actor }}
 
 # This section defines what triggers the workflow.
 on:
