@@ -63,13 +63,18 @@ jobs:
         run: |
           set -eux
 
-          # Si es push, usa la rama del push. Si es PR, usa main
+          # Si es push a test -> despliega en test
+          # Si es PR hacia main -> despliega en main
           if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-            AMPLIFY_BRANCH_NAME="main"
+            AMPLIFY_BRANCH_NAME="${{ github.base_ref }}"  # La rama destino del PR (main)
           else
-            AMPLIFY_BRANCH_NAME="${{ github.ref_name }}"
+            AMPLIFY_BRANCH_NAME="${{ github.ref_name }}"  # La rama del push (test)
           fi
 
+          echo "DEBUG: Event: ${{ github.event_name }}"
+          echo "DEBUG: github.ref_name: ${{ github.ref_name }}"
+          echo "DEBUG: github.base_ref: ${{ github.base_ref }}"
+          echo "DEBUG: github.head_ref: ${{ github.head_ref }}"
           echo "DEBUG: Determined Amplify Branch Name: '$AMPLIFY_BRANCH_NAME'"
           echo "Triggering Amplify deployment for branch: $AMPLIFY_BRANCH_NAME"
 
@@ -89,6 +94,5 @@ jobs:
 
           echo "Amplify Job ID: $JOB_ID"
           echo "job_id=$JOB_ID" >> "$GITHUB_OUTPUT"
-          echo "DEBUG: Content of GITHUB_OUTPUT after writing: $(cat "$GITHUB_OUTPUT")"
         env:
           AWS_REGION: ${{ secrets.AWS_REGION }}
